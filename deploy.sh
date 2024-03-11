@@ -1,19 +1,9 @@
 #!/bin/bash
 
-function package() {
-  echo "removing out directory..."
-  rm -rf out
+function deploy() {
+  bash ./build.sh
   
-  echo "removing artifacts directory..."
-  rm -rf artifacts
-
-  echo "creating artifacts directory..."
-  mkdir artifacts
-
-  echo "building lambda assets..."
-  node esbuild.js
-
-  echo "assets built"
+  echo "deploying assets..."
 
   echo "deploying resources..."
   cd terraform
@@ -28,4 +18,4 @@ function package() {
   terraform apply
 }
 
-package
+deploy

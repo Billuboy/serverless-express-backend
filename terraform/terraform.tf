@@ -7,9 +7,9 @@ terraform {
       source  = "hashicorp/aws"
     }
 
-    archive = {
-      version = "= 2.4.2"
-      source  = "hashicorp/archive"
-    }
+    # archive = {
+    #   version = "= 2.4.2"
+    #   source  = "hashicorp/archive"
+    # }
   }
 }
