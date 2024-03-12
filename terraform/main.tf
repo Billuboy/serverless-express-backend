@@ -1,3 +1,6 @@
+#  TODO: 1. Add proper comments for all the resouces.
+#  TODO: 2. Implement versioned deployements for lambda.
+
 # Providers
 provider "aws" {
   region = "ap-south-1"
@@ -6,102 +9,66 @@ provider "aws" {
 # Resources
 
 # API Gateway
-resource "aws_api_gateway_rest_api" "api_gw" {
+resource "aws_apigatewayv2_api" "api_gw" {
   name = "express-api-gateway"
-  endpoint_configuration {
-    # Type can be "EDGE" or "REGIONAL"
-    types = ["REGIONAL"]
-  }
+  # Protocol type HTTP for HTTP API Gateway.
+  protocol_type = "HTTP"
 }
 
 # Analogies:
-# API Gateway Resource -> REST API Endpoint
+# API Gateway Route -> REST API Endpoint
 # API Gateway Method -> REST API Methods (GET, POST, etc.)
 
 # This block creates a resouce in API Gateway.
 # A resource in a gateway is an endpoint. 
 # Since, we want to fallback to express router, we won't be creating any resouce in gateway. 
-# resource "aws_api_gateway_resource" "resource" {
-#   path_part   = "prod"
-#   parent_id   = aws_api_gateway_rest_api.api_gw.root_resource_id
-#   rest_api_id = aws_api_gateway_rest_api.api_gw.id
-# }
 
 # This block will create a method for the specified resource.
 # We are using ANy because, we want to fallback to express router.
-resource "aws_api_gateway_method" "method" {
-  rest_api_id = aws_api_gateway_rest_api.api_gw.id
-  # As mentioned above, we are relying on express router for route resolution.
-  # That is why, we are using root resouce id. 
-  resource_id = aws_api_gateway_rest_api.api_gw.root_resource_id
-  # If you've created a gateway resource, then please use this code block to pass the correct resource id. 
-  # resource_id   = aws_api_gateway_resource.resource.id
-  http_method   = "ANY"
-  authorization = "NONE"
+resource "aws_apigatewayv2_stage" "api_stage" {
+  api_id      = aws_apigatewayv2_api.api_gw.id
+  name        = var.api_env
+  auto_deploy = true
 }
 
 # This code block will create an integration for the method in particular resource.
 # Since, we want to use Lambda for handling incoming requests, 
 # we have to create a Lambda integration for the specified method.
-resource "aws_api_gateway_integration" "integration" {
-  rest_api_id = aws_api_gateway_rest_api.api_gw.id
-  resource_id = aws_api_gateway_rest_api.api_gw.root_resource_id
-  http_method = aws_api_gateway_method.method.http_method
-  # resource_id             = aws_api_gateway_resource.resource.id
+resource "aws_apigatewayv2_integration" "apis_integration" {
+  api_id = aws_apigatewayv2_api.api_gw.id
+  # Since, we are using Gateway to proxy for an AWS Service (Lambda).
+  integration_type   = "AWS_PROXY"
   # Lambda integration only works with POST method.
-  integration_http_method = "POST"
-  # We are using Lambda Proxy to get the responses from the AWS Lambda.
-  type = "AWS_PROXY"
+  integration_method = "POST"
+
   # Express Lambda ARN
-  uri = aws_lambda_function.express_lambda.invoke_arn
+  integration_uri    = aws_lambda_function.express_lambda.invoke_arn
 }
 
-resource "aws_api_gateway_deployment" "prod_deployment" {
-  rest_api_id = aws_api_gateway_rest_api.api_gw.id
+resource "aws_apigatewayv2_route" "gw_catch_all_route" {
+  api_id = aws_apigatewayv2_api.api_gw.id
 
-  triggers = {
-    # NOTE: The configuration below will satisfy ordering considerations,
-    #       but not pick up all future REST API changes. More advanced patterns
-    #       are possible, such as using the filesha1() function against the
-    #       Terraform configuration file(s) or removing the .id references to
-    #       calculate a hash against whole resources. Be aware that using whole
-    #       resources will show a difference after the initial implementation.
-    #       It will stabilize to only change when resources change afterwards.
-    redeployment = sha1(jsonencode([
-      aws_api_gateway_method.method.id,
-      aws_api_gateway_integration.integration.id,
-    ]))
-  }
-
-    lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_api_gateway_stage" "api_gw_prod_stage" {
-  deployment_id = aws_api_gateway_deployment.prod_deployment.id
-  rest_api_id   = aws_api_gateway_rest_api.api_gw.id
-  stage_name    = "production"
+  route_key = "ANY /{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.apis_integration.id}"
 }
 
 # Lambda
-resource "aws_lambda_permission" "apigw_lambda" {
+resource "aws_lambda_permission" "api_gw" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.express_lambda.function_name
   principal     = "apigateway.amazonaws.com"
 
-  source_arn = "${aws_api_gateway_rest_api.api_gw.execution_arn}/*"
-  # More: http://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-control-access-using-iam-policies-to-invoke-api.html
-  # source_arn = "arn:aws:execute-api:${var.myregion}:${var.accountId}:${aws_api_gateway_rest_api.api.id}/*/${aws_api_gateway_method.method.http_method}${aws_api_gateway_resource.resource.path}"
+  source_arn = "${aws_apigatewayv2_api.api_gw.execution_arn}/*/*"
 }
 
 resource "aws_cloudwatch_log_group" "lambda_log_grp" {
-  name              = "express-lambda"
+  name              = "/aws/lambda/${var.lambda_name}"
   retention_in_days = 30
 }
 
-data "aws_iam_policy_document" "assume_role" {
+# Lambda trust policy
+data "aws_iam_policy_document" "lambda_trust_policy" {
   statement {
     effect = "Allow"
 
@@ -114,25 +81,30 @@ data "aws_iam_policy_document" "assume_role" {
   }
 }
 
-data "aws_iam_policy_document" "lamda_access_policy" {
-    statement {
-    effect = "Allow"
+# Lambda resource access IAM role.
+# data "aws_iam_policy_document" "lambda_access_policy" {
+#   statement {
+#     effect = "Allow"
 
-    resources = [aws_cloudwatch_log_group.lambda_log_grp.arn]
+#     resources = [aws_cloudwatch_log_group.lambda_log_grp.arn]
 
-    actions = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-  }
+#     actions = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+#   }
+# }
+
+resource "aws_iam_role" "lambda_iam_role" {
+  name = "express-lambda-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_trust_policy.json
+
+  # inline_policy {
+  #   name   = "lambda-resource-access-policy"
+  #   policy = data.aws_iam_policy_document.lambda_access_policy.json
+  # }
 }
 
-resource "aws_iam_role" "iam_for_lambda" {
-  name               = "express-lambda-role"
-
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
-
-  inline_policy {
-    name = "lambda-resource-access-policy"
-    policy = data.aws_iam_policy_document.lamda_access_policy.json
-  }
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution_policy" {
+  role       = aws_iam_role.lambda_iam_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 # If you want to delegate the zipping task to terraform then,
@@ -145,11 +117,12 @@ resource "aws_iam_role" "iam_for_lambda" {
 
 resource "aws_lambda_function" "express_lambda" {
   filename      = "../artifacts/lambda.zip"
-  function_name = "express-lambda"
-  role          = aws_iam_role.iam_for_lambda.arn
+  function_name = var.lambda_name
+  role          = aws_iam_role.lambda_iam_role.arn
   handler       = "lambda.handler"
   timeout       = 30
   memory_size   = 256
+
   ephemeral_storage {
     size = 512
   }

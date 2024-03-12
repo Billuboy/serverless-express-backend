@@ -20,7 +20,5 @@ const cachedServerInstance = serverlessExpress({
 });
 
 // eslint-disable-next-line import/prefer-default-export
-export const handler = async (event: APIGatewayEvent, context: Context, callback: Callback) => {
-  console.log(event);
-  return cachedServerInstance(event, context, callback);
-};
+export const handler = async (event: APIGatewayEvent, context: Context, callback: Callback) =>
+  cachedServerInstance(event, context, callback);

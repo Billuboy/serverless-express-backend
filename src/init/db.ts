@@ -9,7 +9,7 @@ const queryClient = pg.default(process.env.DB_CONN_STRING!, { ssl: 'require' });
 function dbClient() {
   return drizzle(queryClient, {
     schema,
-    logger: process.env.NODE_ENV !== 'production',
+    logger: process.env.API_ENV !== 'production',
   });
 }
 

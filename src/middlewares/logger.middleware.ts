@@ -11,6 +11,8 @@ const loggerMiddleware = async (
 ) => {
   const meta: Record<string, unknown> = {
     request: {
+      baseUrl: req.baseUrl,
+      originalUrl: req.originalUrl,
       url: req.url,
       method: req.method,
       origin: req.headers.origin,
