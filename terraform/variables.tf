@@ -15,3 +15,9 @@ variable "lambda_name" {
   description = "Please enter a name for lambda"
   default     = "express-lambda"
 }
+
+variable "enable_versioning" {
+  type        = bool
+  description = "Do you want to enable versioning for lambda?"
+  default     = true
+}
