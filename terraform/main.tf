@@ -1,6 +1,12 @@
 # Configuration for AWS provider.
 provider "aws" {
   region = "ap-south-1"
+
+  default_tags {
+    tags = {
+      "provisioned_through" = "terraform"
+    }
+  }
 }
 
 # Resources
